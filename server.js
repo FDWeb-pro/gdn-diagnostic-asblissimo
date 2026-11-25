@@ -8,6 +8,7 @@ const crypto = require("crypto");
 const express = require("express");
 const Database = require("better-sqlite3");
 const C = require("./content");
+const pdf = require("./pdf");
 
 const app = express();
 const PORT = process.env.PORT || 8300;
@@ -198,7 +199,7 @@ button:hover{background:var(--bleu-fonce);}
 </style></head>
 <body><form class="box" id="f" autocomplete="on">
 <h1>Tableau de bord</h1>
-<p class="sub">Diagnostic numerique - Le Guichet du Numerique</p>
+<p class="sub">Diagnostic numérique - Le Guichet du Numérique</p>
 <div class="err" id="e">Identifiants invalides.</div>
 <label for="u">Identifiant</label>
 <input id="u" name="username" value="gdn" autocomplete="username" />
@@ -240,7 +241,7 @@ app.get("/admin", (req, res) => {
 });
 
 // --- Statistiques agrégées ---
-app.get("/api/stats", requireAuth, (req, res) => {
+function computeStats() {
   const total = db.prepare("SELECT COUNT(*) n FROM diagnostics").get().n;
   const leads = db.prepare("SELECT COUNT(*) n FROM contacts WHERE no_contact = 0 AND (wants_contact=1 OR wants_formations=1 OR wants_newsletter=1)").get().n;
   const newsletters = db.prepare("SELECT COUNT(*) n FROM contacts WHERE wants_newsletter = 1").get().n;
@@ -263,7 +264,7 @@ app.get("/api/stats", requireAuth, (req, res) => {
   const multiNeeds = db.prepare("SELECT COUNT(*) n FROM diagnostics WHERE thematique_secondaire IS NOT NULL").get().n;
   const shortTerm = db.prepare("SELECT COUNT(*) n FROM diagnostics WHERE echeance IN ('asap','3mois')").get().n;
 
-  res.json({
+  return {
     total,
     leads,
     newsletters,
@@ -287,7 +288,82 @@ app.get("/api/stats", requireAuth, (req, res) => {
       theme: THEME_LABEL[r.thematique_principale] || r.thematique_principale,
       n: r.n,
     })),
+  };
+}
+
+app.get("/api/stats", requireAuth, (req, res) => res.json(computeStats()));
+
+// --- Données détaillées (table filtrable) ---
+const ENTRIES_SQL = `
+  SELECT d.id, d.created_at, d.event_code, d.situation, d.thematique_principale, d.thematique_secondaire,
+         d.aide, d.orientation, d.public, d.echeance,
+         c.prenom, c.nom, c.association, c.fonction, c.email, c.telephone, c.precisions,
+         c.wants_contact, c.wants_formations, c.wants_newsletter, c.no_contact
+  FROM diagnostics d LEFT JOIN contacts c ON c.diagnostic_id = d.id
+  ORDER BY d.id DESC`;
+
+app.get("/api/entries", requireAuth, (req, res) => {
+  const rows = db.prepare(ENTRIES_SQL).all();
+  res.json(
+    rows.map((r) => ({
+      id: r.id,
+      created_at: r.created_at,
+      event_code: r.event_code,
+      situation: r.situation,
+      situation_label: Q_LABEL(C.Q1, r.situation),
+      thematique_principale: r.thematique_principale,
+      theme_principal_label: THEME_LABEL[r.thematique_principale] || "",
+      thematique_secondaire: r.thematique_secondaire,
+      theme_secondaire_label: r.thematique_secondaire ? THEME_LABEL[r.thematique_secondaire] || "" : "",
+      aide: r.aide,
+      aide_label: Q_LABEL(C.Q3, r.aide),
+      orientation: r.orientation,
+      service_label: ORIENTATION_LABEL[r.orientation] || "",
+      public: r.public,
+      public_label: Q_LABEL(C.Q4, r.public),
+      echeance: r.echeance,
+      echeance_label: Q_LABEL(C.Q5, r.echeance),
+      prenom: r.prenom,
+      nom: r.nom,
+      association: r.association,
+      fonction: r.fonction,
+      email: r.email,
+      telephone: r.telephone,
+      precisions: r.precisions,
+      wants_contact: !!r.wants_contact,
+      wants_formations: !!r.wants_formations,
+      wants_newsletter: !!r.wants_newsletter,
+      no_contact: !!r.no_contact,
+      has_contact: !!(r.email || r.nom || r.prenom),
+    }))
+  );
+});
+
+// --- Suppression d'un diagnostic (et de ses contacts) ---
+app.delete("/api/entries/:id", requireAuth, (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: "id invalide" });
+  const tx = db.transaction((i) => {
+    db.prepare("DELETE FROM contacts WHERE diagnostic_id = ?").run(i);
+    return db.prepare("DELETE FROM diagnostics WHERE id = ?").run(i).changes;
   });
+  const changes = tx(id);
+  if (!changes) return res.status(404).json({ error: "introuvable" });
+  res.json({ ok: true });
+});
+
+// --- PDF : un diagnostic ---
+app.get("/admin/pdf/:id", requireAuth, (req, res) => {
+  const id = Number(req.params.id);
+  const row = db.prepare(ENTRIES_SQL.replace("ORDER BY d.id DESC", "WHERE d.id = ? ORDER BY d.id DESC")).get(id);
+  if (!row) return res.status(404).send("Diagnostic introuvable.");
+  pdf.streamEntryPdf(res, row, C);
+});
+
+// --- PDF : rapport global ---
+app.get("/admin/pdf", requireAuth, (req, res) => {
+  const rows = db.prepare(ENTRIES_SQL).all();
+  pdf.streamAllPdf(res, rows, computeStats(), C);
 });
 
 // --- Export CSV ---
