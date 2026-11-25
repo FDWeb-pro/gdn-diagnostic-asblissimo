@@ -4,6 +4,7 @@
  */
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 const express = require("express");
 const Database = require("better-sqlite3");
 const C = require("./content");
@@ -143,22 +144,103 @@ app.post("/api/contact", (req, res) => {
   res.json({ ok: true });
 });
 
-// --- Auth basique pour l'admin ---
-function basicAuth(req, res, next) {
-  const hdr = req.headers.authorization || "";
-  const token = hdr.startsWith("Basic ") ? hdr.slice(6) : "";
-  const [user, pass] = Buffer.from(token, "base64").toString().split(":");
-  if (user === ADMIN_USER && pass === ADMIN_PASSWORD) return next();
-  res.set("WWW-Authenticate", 'Basic realm="Diagnostic GdN - Admin"');
-  res.status(401).send("Authentification requise.");
+// --- Authentification admin (cookie de session OU Basic Auth pour l'API) ---
+const AUTH_TOKEN = crypto
+  .createHash("sha256")
+  .update("gdn-diag-v1|" + ADMIN_USER + "|" + ADMIN_PASSWORD)
+  .digest("hex");
+
+function parseCookies(req) {
+  const out = {};
+  (req.headers.cookie || "").split(";").forEach((c) => {
+    const i = c.indexOf("=");
+    if (i > -1) out[c.slice(0, i).trim()] = c.slice(i + 1).trim();
+  });
+  return out;
 }
 
-app.get("/admin", basicAuth, (req, res) =>
-  res.sendFile(path.join(__dirname, "public", "admin.html"))
-);
+function checkBasic(req) {
+  const hdr = req.headers.authorization || "";
+  if (!hdr.startsWith("Basic ")) return false;
+  const [user, pass] = Buffer.from(hdr.slice(6), "base64").toString().split(":");
+  return user === ADMIN_USER && pass === ADMIN_PASSWORD;
+}
+
+function isAuthed(req) {
+  return parseCookies(req).gdn_admin === AUTH_TOKEN || checkBasic(req);
+}
+
+function requireAuth(req, res, next) {
+  if (isAuthed(req)) return next();
+  res.set("WWW-Authenticate", 'Basic realm="Diagnostic GdN - Admin"');
+  res.status(401).json({ error: "authentification requise" });
+}
+
+const LOGIN_PAGE = `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex" />
+<title>Connexion - Diagnostic GdN</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+:root{--bleu:#204EC1;--bleu-fonce:#183a92;--bleu-10:#E8ECF9;--orange:#C6502B;--orange-10:#FFF5F0;--noir:#111418;--gris:#5b6472;--fond:#f4f6fb;}
+*{box-sizing:border-box;}body{margin:0;min-height:100dvh;display:grid;place-items:center;font-family:"Inter",system-ui,sans-serif;background:var(--fond);color:var(--noir);padding:20px;}
+.box{background:#fff;border:1px solid #e6e9ef;border-radius:16px;box-shadow:0 10px 30px rgba(32,78,193,.10);padding:28px;width:100%;max-width:380px;}
+h1{font-family:"Poppins",sans-serif;font-size:1.2rem;color:var(--bleu);margin:0 0 4px;}
+p.sub{color:var(--gris);font-size:.88rem;margin:0 0 20px;}
+label{display:block;font-family:"Poppins",sans-serif;font-weight:600;font-size:.85rem;margin-bottom:6px;}
+input{width:100%;padding:13px 14px;border:2px solid #e6e9ef;border-radius:11px;font-size:1rem;font-family:inherit;margin-bottom:14px;}
+input:focus{outline:none;border-color:var(--bleu);}
+button{width:100%;background:var(--bleu);color:#fff;border:none;border-radius:12px;padding:14px;font-family:"Poppins",sans-serif;font-weight:600;font-size:1rem;cursor:pointer;}
+button:hover{background:var(--bleu-fonce);}
+.err{display:none;background:var(--orange-10);border:1px solid var(--orange);color:var(--orange);border-radius:10px;padding:10px 12px;font-size:.85rem;margin-bottom:14px;}
+.err.show{display:block;}
+</style></head>
+<body><form class="box" id="f" autocomplete="on">
+<h1>Tableau de bord</h1>
+<p class="sub">Diagnostic numerique - Le Guichet du Numerique</p>
+<div class="err" id="e">Identifiants invalides.</div>
+<label for="u">Identifiant</label>
+<input id="u" name="username" value="gdn" autocomplete="username" />
+<label for="p">Mot de passe</label>
+<input id="p" name="password" type="password" autocomplete="current-password" autofocus />
+<button type="submit">Se connecter</button>
+</form>
+<script>
+document.getElementById("f").addEventListener("submit",function(ev){
+  ev.preventDefault();
+  fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({user:document.getElementById("u").value,password:document.getElementById("p").value})})
+  .then(function(r){if(r.ok){location.href="/admin";}else{document.getElementById("e").classList.add("show");}})
+  .catch(function(){document.getElementById("e").classList.add("show");});
+});
+</script></body></html>`;
+
+app.post("/api/login", (req, res) => {
+  const user = (req.body && req.body.user) || ADMIN_USER;
+  const pass = (req.body && req.body.password) || "";
+  if (user === ADMIN_USER && pass === ADMIN_PASSWORD) {
+    res.setHeader(
+      "Set-Cookie",
+      `gdn_admin=${AUTH_TOKEN}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=86400`
+    );
+    return res.json({ ok: true });
+  }
+  res.status(401).json({ error: "identifiants invalides" });
+});
+
+app.get("/admin/logout", (req, res) => {
+  res.setHeader("Set-Cookie", "gdn_admin=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0");
+  res.redirect("/admin");
+});
+
+app.get("/admin", (req, res) => {
+  if (isAuthed(req)) return res.sendFile(path.join(__dirname, "public", "admin.html"));
+  res.status(200).type("html").send(LOGIN_PAGE);
+});
 
 // --- Statistiques agrégées ---
-app.get("/api/stats", basicAuth, (req, res) => {
+app.get("/api/stats", requireAuth, (req, res) => {
   const total = db.prepare("SELECT COUNT(*) n FROM diagnostics").get().n;
   const leads = db.prepare("SELECT COUNT(*) n FROM contacts WHERE no_contact = 0 AND (wants_contact=1 OR wants_formations=1 OR wants_newsletter=1)").get().n;
   const newsletters = db.prepare("SELECT COUNT(*) n FROM contacts WHERE wants_newsletter = 1").get().n;
@@ -215,7 +297,7 @@ function csvField(v) {
   return /[";\n]/.test(s) ? `"${s}"` : s;
 }
 
-app.get("/api/export.csv", basicAuth, (req, res) => {
+app.get("/api/export.csv", requireAuth, (req, res) => {
   const rows = db.prepare(`
     SELECT d.id, d.created_at, d.event_code, d.situation, d.thematique_principale, d.thematique_secondaire,
            d.aide, d.orientation, d.public, d.echeance,
