@@ -249,7 +249,7 @@ function computeStats() {
 
   const groupCount = (col, labelMap, q) => {
     const rows = db.prepare(`SELECT ${col} v, COUNT(*) n FROM diagnostics WHERE ${col} IS NOT NULL GROUP BY ${col} ORDER BY n DESC`).all();
-    return rows.map((r) => ({ value: r.v, label: labelMap ? (labelMap[r.v] || (q ? Q_LABEL(q, r.v) : r.v)) : r.v, n: r.n }));
+    return rows.map((r) => ({ value: r.v, label: labelMap ? (labelMap[r.v] || r.v) : (q ? Q_LABEL(q, r.v) : r.v), n: r.n }));
   };
 
   // Thématiques : principal + secondaire combinés pour le classement
