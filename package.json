@@ -1,0 +1,13 @@
+{
+  "name": "diagnostic-gdn",
+  "version": "1.0.0",
+  "description": "Diagnostic numérique express - Le Guichet du Numérique",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "express": "^4.21.2"
+  }
+}
