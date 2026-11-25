@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Diagnostic numérique express - Le Guichet du Numérique</title>
+  <meta name="description" content="Identifiez en 3 minutes les besoins numériques de votre association et découvrez le type d'accompagnement adapté. Un service du Guichet du Numérique." />
+  <meta name="robots" content="noindex" />
+  <meta name="theme-color" content="#204EC1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Aller au contenu</a>
+  <header class="site-header">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 36 36" width="30" height="30" role="img" aria-label="Le Guichet du Numérique">
+          <rect x="2" y="2" width="32" height="32" rx="8" fill="#204EC1"/>
+          <circle cx="18" cy="14" r="5" fill="#5FF5B1"/>
+          <path d="M8 29c0-5.5 4.5-9 10-9s10 3.5 10 9" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <span class="brand-text">
+        <strong>Le Guichet du Numérique</strong>
+        <small>Remettre l'humain au cœur du numérique.</small>
+      </span>
+    </div>
+  </header>
+
+  <main id="main" class="app" aria-live="polite">
+    <!-- Barre de progression (masquée sur l'accueil et le résultat) -->
+    <div id="progress" class="progress" hidden>
+      <div class="progress-info">
+        <span id="progress-label">Étape 1 sur 5</span>
+      </div>
+      <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="5" aria-valuenow="0" id="progress-bar-wrap">
+        <div id="progress-bar" class="progress-bar" style="width:0%"></div>
+      </div>
+    </div>
+
+    <div id="screen" class="screen"><!-- rendu dynamique --></div>
+  </main>
+
+  <footer class="site-footer">
+    <span>Un service du <strong>Guichet du Numérique</strong></span>
+    <span class="sep" aria-hidden="true">•</span>
+    <span>Remettre l'humain au cœur du numérique.</span>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>
