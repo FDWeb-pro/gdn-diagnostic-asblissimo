@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex" />
+<title>Tableau de bord - Diagnostic GdN</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+:root{--bleu:#204EC1;--bleu-10:#E8ECF9;--bleu-60:#708DD8;--vert:#5FF5B1;--vert-f:#13925c;--orange:#C6502B;--noir:#111418;--gris:#5b6472;--fond:#f4f6fb;--bord:#e6e9ef;}
+*{box-sizing:border-box;}
+body{margin:0;font-family:"Inter",system-ui,sans-serif;background:var(--fond);color:var(--noir);}
+h1,h2,h3{font-family:"Poppins",sans-serif;}
+header{background:#fff;border-bottom:1px solid var(--bord);padding:16px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;}
+header h1{margin:0;font-size:1.2rem;color:var(--bleu);}
+header .actions{display:flex;gap:10px;align-items:center;}
+.btn{font-family:"Poppins";font-weight:600;border:none;border-radius:10px;padding:10px 16px;cursor:pointer;text-decoration:none;font-size:.9rem;display:inline-flex;align-items:center;gap:6px;}
+.btn-primary{background:var(--bleu);color:#fff;}
+.btn-ghost{background:var(--bleu-10);color:var(--bleu);}
+main{max-width:1100px;margin:0 auto;padding:20px;}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:24px;}
+.kpi{background:#fff;border:1px solid var(--bord);border-radius:14px;padding:18px;box-shadow:0 2px 10px rgba(16,20,30,.04);}
+.kpi .n{font-family:"Poppins";font-weight:700;font-size:2rem;color:var(--bleu);line-height:1;}
+.kpi .l{color:var(--gris);font-size:.82rem;margin-top:6px;}
+.kpi.accent .n{color:var(--vert-f);}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+@media(max-width:800px){.grid{grid-template-columns:1fr;}}
+.panel{background:#fff;border:1px solid var(--bord);border-radius:14px;padding:20px;margin-bottom:18px;}
+.panel h2{margin:0 0 14px;font-size:1rem;color:var(--noir);}
+.bar-row{margin-bottom:10px;}
+.bar-row .top{display:flex;justify-content:space-between;font-size:.85rem;margin-bottom:4px;}
+.bar-row .top .val{font-weight:600;color:var(--bleu);}
+.bar{height:10px;background:var(--bleu-10);border-radius:99px;overflow:hidden;}
+.bar>span{display:block;height:100%;background:linear-gradient(90deg,var(--bleu),var(--bleu-60));border-radius:99px;}
+.bar.green>span{background:linear-gradient(90deg,var(--vert-f),var(--vert));}
+table{width:100%;border-collapse:collapse;font-size:.85rem;}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--bord);}
+th{color:var(--gris);font-weight:600;font-family:"Poppins";}
+td.n,th.n{text-align:right;}
+.empty{color:var(--gris);font-style:italic;padding:14px 0;}
+.updated{color:var(--gris);font-size:.78rem;}
+</style>
+</head>
+<body>
+<header>
+  <h1>Tableau de bord — Diagnostic numérique</h1>
+  <div class="actions">
+    <span class="updated" id="updated"></span>
+    <button class="btn btn-ghost" id="refresh">↻ Actualiser</button>
+    <a class="btn btn-primary" href="/api/export.csv">⬇ Export CSV</a>
+  </div>
+</header>
+<main>
+  <div class="kpis" id="kpis"></div>
+  <div class="grid">
+    <div class="panel"><h2>Classement des thématiques (principal + secondaire)</h2><div id="themes"></div></div>
+    <div class="panel"><h2>Répartition par type de service</h2><div id="orientations"></div></div>
+  </div>
+  <div class="grid">
+    <div class="panel"><h2>Situation actuelle</h2><div id="situations"></div></div>
+    <div class="panel"><h2>Public concerné</h2><div id="publics"></div></div>
+  </div>
+  <div class="grid">
+    <div class="panel"><h2>Échéances</h2><div id="echeances"></div></div>
+    <div class="panel"><h2>Thématiques les plus demandées par service</h2><div id="cross"></div></div>
+  </div>
+</main>
+<script>
+function bars(el, rows, green){
+  if(!rows || !rows.length){el.innerHTML='<p class="empty">Aucune donnée pour l\'instant.</p>';return;}
+  var max=Math.max.apply(null,rows.map(function(r){return r.n;}));
+  el.innerHTML=rows.map(function(r){
+    var pct=max?Math.round(r.n/max*100):0;
+    return '<div class="bar-row"><div class="top"><span>'+escapeHtml(r.label)+'</span><span class="val">'+r.n+'</span></div>'+
+      '<div class="bar'+(green?' green':'')+'"><span style="width:'+pct+'%"></span></div></div>';
+  }).join('');
+}
+function escapeHtml(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function load(){
+  fetch('/api/stats',{headers:{'Accept':'application/json'}}).then(function(r){
+    if(!r.ok) throw new Error('auth');
+    return r.json();
+  }).then(function(s){
+    document.getElementById('kpis').innerHTML=[
+      ['total','Diagnostics réalisés',false],
+      ['leads','Demandes de contact',true],
+      ['conversion','Taux de conversion (%)',true],
+      ['withContactRequest','Rappels souhaités',false],
+      ['newsletters','Inscriptions newsletter',false],
+      ['shortTerm','Projets à 3 mois',false],
+      ['multiNeeds','Besoins multiples',false]
+    ].map(function(k){
+      var v=s[k[0]];
+      return '<div class="kpi'+(k[2]?' accent':'')+'"><div class="n">'+(v==null?0:v)+'</div><div class="l">'+k[1]+'</div></div>';
+    }).join('');
+    bars(document.getElementById('themes'),s.themesAll);
+    bars(document.getElementById('orientations'),s.orientations,true);
+    bars(document.getElementById('situations'),s.situations);
+    bars(document.getElementById('publics'),s.publics);
+    bars(document.getElementById('echeances'),s.echeances);
+    var cross=s.themeByService||[];
+    var el=document.getElementById('cross');
+    if(!cross.length){el.innerHTML='<p class="empty">Aucune donnée pour l\'instant.</p>';}
+    else{
+      el.innerHTML='<table><thead><tr><th>Service</th><th>Thématique</th><th class="n">Nb</th></tr></thead><tbody>'+
+        cross.map(function(r){return '<tr><td>'+escapeHtml(r.orientation)+'</td><td>'+escapeHtml(r.theme)+'</td><td class="n">'+r.n+'</td></tr>';}).join('')+
+        '</tbody></table>';
+    }
+    document.getElementById('updated').textContent='Mis à jour à '+new Date().toLocaleTimeString('fr-BE');
+  }).catch(function(){
+    document.getElementById('kpis').innerHTML='<p class="empty">Impossible de charger les statistiques.</p>';
+  });
+}
+document.getElementById('refresh').addEventListener('click',load);
+load();
+</script>
+</body>
+</html>
